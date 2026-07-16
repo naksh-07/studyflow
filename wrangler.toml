@@ -1,0 +1,30 @@
+name = "studyflow"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+main = ".open-next/worker.js"
+workers_dev = true
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[observability]
+enabled = true
+
+[placement]
+mode = "smart"
+
+[limits]
+cpu_ms = 50
+
+[vars]
+# Placeholders for non-sensitive application parameters.
+# Sensitive secrets must be set via wrangler secrets or Cloudflare dashboard.
+NEXT_PUBLIC_STUDYFLOW_API_URL = "https://studyflow.example.com"
+NEXT_PUBLIC_STUDYFLOW_APP_URL = "https://studyflow.example.com"
+GOOGLE_CLIENT_ID = "PLACEHOLDER_GOOGLE_CLIENT_ID"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "studyflow_db"
+database_id = "00000000-0000-0000-0000-000000000000"

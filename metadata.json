@@ -1,0 +1,8 @@
+{
+  "name": "StudyFlow",
+  "description": "A beautiful, guest-first, offline-ready study planner and timetable generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
