@@ -14,17 +14,16 @@ enabled = true
 [placement]
 mode = "smart"
 
-[limits]
-cpu_ms = 50
 
 [vars]
 # Placeholders for non-sensitive application parameters.
 # Sensitive secrets must be set via wrangler secrets or Cloudflare dashboard.
-NEXT_PUBLIC_STUDYFLOW_API_URL = "https://studyflow.example.com"
-NEXT_PUBLIC_STUDYFLOW_APP_URL = "https://studyflow.example.com"
-GOOGLE_CLIENT_ID = "PLACEHOLDER_GOOGLE_CLIENT_ID"
+NEXT_PUBLIC_STUDYFLOW_API_URL = "https://studyflow.riyasaksena502.workers.dev"
+NEXT_PUBLIC_STUDYFLOW_APP_URL = "https://studyflow.riyasaksena502.workers.dev"
+GOOGLE_CLIENT_ID = "857658557594-dckfh44808tvoa6mr58vjftnbqig0usp.apps.googleusercontent.com"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "studyflow_db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "8fc362c8-d0ce-462c-9ecb-ed28367272cf"
+migrations_dir = "db/migrations"
