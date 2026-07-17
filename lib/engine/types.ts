@@ -15,6 +15,8 @@ export interface EngineSession {
   isDeepWork?: boolean;
   recurrenceRule?: RecurrenceRule;
   exceptions?: ScheduleException[];
+  minimumDailyMinutes?: number;
+  maximumDailyMinutes?: number;
 }
 
 export interface BreakBlock {

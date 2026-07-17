@@ -7,6 +7,8 @@ export const subjects = sqliteTable('subjects', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   color: text('color'),
+  minimumDailyMinutes: integer('minimum_daily_minutes').notNull().default(30),
+  maximumDailyMinutes: integer('maximum_daily_minutes').notNull().default(60),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

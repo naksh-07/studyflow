@@ -9,9 +9,11 @@ export interface TimetableInputSession {
   startTime: string;
   recurrenceRule?: RecurrenceRule;
   exceptions?: ScheduleException[];
+  minimumDailyMinutes?: number;
+  maximumDailyMinutes?: number;
 }
 
-export interface BuildOriginalTimetableOptions {
+interface BuildOriginalTimetableOptions {
   sleepTime: string;
   deepWorkMinDuration?: number;
 }
@@ -38,6 +40,8 @@ export function buildOriginalTimetable(
       isDeepWork: durationMinutes >= deepWorkMinDuration,
       recurrenceRule: session.recurrenceRule,
       exceptions: session.exceptions,
+      minimumDailyMinutes: session.minimumDailyMinutes ?? 30,
+      maximumDailyMinutes: session.maximumDailyMinutes ?? 60,
     } as any;
   });
 }

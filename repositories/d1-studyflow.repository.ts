@@ -46,11 +46,29 @@ export class D1StudyFlowRepository {
       .from(sessions)
       .where(eq(sessions.timetableId, timetable.id));
 
-    const mappedSessions = timetableSessions.map(session => ({
-      ...session,
-      recurrenceRule: session.recurrenceRule ? JSON.parse(session.recurrenceRule) : undefined,
-      exceptions: session.exceptions ? JSON.parse(session.exceptions) : undefined,
-    }));
+    const subjectsResult = await this.db
+      .select()
+      .from(subjects)
+      .where(eq(subjects.userId, userId));
+
+    const subjectConstraintsMap = new Map<string, { min: number, max: number }>();
+    for (const sub of subjectsResult) {
+      subjectConstraintsMap.set(sub.id, {
+        min: sub.minimumDailyMinutes ?? 30,
+        max: sub.maximumDailyMinutes ?? 60
+      });
+    }
+
+    const mappedSessions = timetableSessions.map(session => {
+      const constraints = session.subjectId ? subjectConstraintsMap.get(session.subjectId) : undefined;
+      return {
+        ...session,
+        recurrenceRule: session.recurrenceRule ? JSON.parse(session.recurrenceRule) : undefined,
+        exceptions: session.exceptions ? JSON.parse(session.exceptions) : undefined,
+        minimumDailyMinutes: constraints?.min ?? 30,
+        maximumDailyMinutes: constraints?.max ?? 60,
+      };
+    });
 
     return {
       ...timetable,
@@ -76,9 +94,31 @@ export class D1StudyFlowRepository {
       .from(sessions)
       .where(eq(sessions.todayScheduleId, schedule.id));
 
+    const subjectsResult = await this.db
+      .select()
+      .from(subjects)
+      .where(eq(subjects.userId, userId));
+
+    const subjectConstraintsMap = new Map<string, { min: number, max: number }>();
+    for (const sub of subjectsResult) {
+      subjectConstraintsMap.set(sub.id, {
+        min: sub.minimumDailyMinutes ?? 30,
+        max: sub.maximumDailyMinutes ?? 60
+      });
+    }
+
+    const mappedSessions = scheduleSessions.map(session => {
+      const constraints = session.subjectId ? subjectConstraintsMap.get(session.subjectId) : undefined;
+      return {
+        ...session,
+        minimumDailyMinutes: constraints?.min ?? 30,
+        maximumDailyMinutes: constraints?.max ?? 60,
+      };
+    });
+
     return {
       ...schedule,
-      sessions: scheduleSessions,
+      sessions: mappedSessions,
     };
   }
 
@@ -164,6 +204,12 @@ export class D1StudyFlowRepository {
     }
 
     for (const subjectName of subjectNames) {
+      const session = snapshot.originalSessions.find(s => s.subjectId === subjectName) 
+                   || snapshot.todayItems.find(item => isStudySession(item) && item.subjectId === subjectName) as EngineSession;
+      
+      const minimumDailyMinutes = session?.minimumDailyMinutes ?? 30;
+      const maximumDailyMinutes = session?.maximumDailyMinutes ?? 60;
+
       await this.db
         .insert(subjects)
         .values({
@@ -171,11 +217,15 @@ export class D1StudyFlowRepository {
           userId,
           name: subjectName,
           color: null,
+          minimumDailyMinutes,
+          maximumDailyMinutes,
         })
         .onConflictDoUpdate({
           target: subjects.id,
           set: {
             name: subjectName,
+            minimumDailyMinutes,
+            maximumDailyMinutes,
           },
         });
     }

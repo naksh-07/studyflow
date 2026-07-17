@@ -185,13 +185,65 @@ export class RecurrenceEngine {
       return timeToMinutes(aTime) - timeToMinutes(bTime);
     });
 
+    // Step 1: Calculate total available study time
+    const totalAvailableStudyTime = sorted.reduce((sum, s) => sum + s.durationMinutes, 0);
+
+    // Step 2: Attempt to satisfy every subject's Minimum Minutes / Day
+    const sumMin = sorted.reduce((sum, s) => sum + (s.minimumDailyMinutes ?? 30), 0);
+
+    if (totalAvailableStudyTime < sumMin) {
+      throw new Error(`The configured minimum daily targets (${sumMin} minutes) cannot fit into the available study time (${totalAvailableStudyTime} minutes).`);
+    }
+
+    // Allocate minimum to each
+    const allocations = sorted.map(s => s.minimumDailyMinutes ?? 30);
+
+    // Step 3: If additional study time exists, continue distributing time without exceeding each subject's Maximum Minutes / Day
+    let remaining = totalAvailableStudyTime - sumMin;
+
+    if (remaining > 0) {
+      const capacities = sorted.map((s, idx) => Math.max(0, (s.maximumDailyMinutes ?? 60) - allocations[idx]));
+      const totalCapacity = capacities.reduce((sum, c) => sum + c, 0);
+
+      if (totalCapacity > 0) {
+        for (let idx = 0; idx < sorted.length; idx++) {
+          const capacity = capacities[idx];
+          if (capacity > 0) {
+            let share = 0;
+            if (idx === sorted.length - 1 || totalCapacity === capacity) {
+              share = Math.min(remaining, capacity);
+            } else {
+              share = Math.min(remaining, capacity, Math.floor((capacity / totalCapacity) * (totalAvailableStudyTime - sumMin)));
+            }
+            allocations[idx] += share;
+            remaining -= share;
+          }
+        }
+
+        // Leftover cleanup due to floor/rounding
+        if (remaining > 0) {
+          for (let idx = 0; idx < sorted.length && remaining > 0; idx++) {
+            const s = sorted[idx];
+            const max = s.maximumDailyMinutes ?? 60;
+            const currentAlloc = allocations[idx];
+            if (currentAlloc < max) {
+              const added = Math.min(remaining, max - currentAlloc);
+              allocations[idx] += added;
+              remaining -= added;
+            }
+          }
+        }
+      }
+    }
+
     let currentTime = options.wakeUpTime;
     const items: ScheduleItem[] = [];
 
-    for (const session of sorted) {
+    for (let idx = 0; idx < sorted.length; idx++) {
+      const session = sorted[idx];
       // Check for replacement exception
       let currentSubjectId = session.subjectId;
-      let currentDuration = session.durationMinutes;
+      let currentDuration = allocations[idx];
 
       if (session.exceptions) {
         const exception = session.exceptions.find((e) => e.originalDate === dateStr);

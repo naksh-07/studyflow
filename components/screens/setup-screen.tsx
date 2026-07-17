@@ -19,6 +19,8 @@ interface SetupSubject {
   startDate: string;
   until?: string;
   showAdvanced?: boolean;
+  minimumDailyMinutes: number;
+  maximumDailyMinutes: number;
 }
 
 export function SetupScreen({ timetableId, onCancel }: SetupScreenProps) {
@@ -58,6 +60,8 @@ export function SetupScreen({ timetableId, onCancel }: SetupScreenProps) {
           startDate: rule?.startDate || todayStr,
           until: rule?.until,
           showAdvanced: false,
+          minimumDailyMinutes: s.minimumDailyMinutes ?? 30,
+          maximumDailyMinutes: s.maximumDailyMinutes ?? 60,
         };
       });
     } else {
@@ -72,6 +76,8 @@ export function SetupScreen({ timetableId, onCancel }: SetupScreenProps) {
           interval: 1,
           startDate: todayStr,
           showAdvanced: false,
+          minimumDailyMinutes: 30,
+          maximumDailyMinutes: 60,
         },
       ];
     }
@@ -97,6 +103,8 @@ export function SetupScreen({ timetableId, onCancel }: SetupScreenProps) {
         interval: 1,
         startDate: todayStr,
         showAdvanced: false,
+        minimumDailyMinutes: 30,
+        maximumDailyMinutes: 60,
       },
     ]);
   };
@@ -124,6 +132,8 @@ export function SetupScreen({ timetableId, onCancel }: SetupScreenProps) {
         id: sub.id,
         name: sub.name,
         time: sub.time,
+        minimumDailyMinutes: sub.minimumDailyMinutes,
+        maximumDailyMinutes: sub.maximumDailyMinutes,
         recurrenceRule: {
           id: crypto.randomUUID(),
           frequency,
@@ -226,6 +236,35 @@ export function SetupScreen({ timetableId, onCancel }: SetupScreenProps) {
                   >
                     <X className="h-5 w-5" />
                   </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/60">
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor={`min-minutes-${subject.id}`} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                      Min Minutes / Day
+                    </label>
+                    <input
+                      id={`min-minutes-${subject.id}`}
+                      type="number"
+                      min="0"
+                      value={subject.minimumDailyMinutes}
+                      onChange={(e) => updateSubject(i, "minimumDailyMinutes", parseInt(e.target.value, 10) || 0)}
+                      className="bg-background border rounded-lg h-9 px-3 text-sm outline-none transition-all focus:ring-2 ring-primary/20"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor={`max-minutes-${subject.id}`} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                      Max Minutes / Day
+                    </label>
+                    <input
+                      id={`max-minutes-${subject.id}`}
+                      type="number"
+                      min="0"
+                      value={subject.maximumDailyMinutes}
+                      onChange={(e) => updateSubject(i, "maximumDailyMinutes", parseInt(e.target.value, 10) || 0)}
+                      className="bg-background border rounded-lg h-9 px-3 text-sm outline-none transition-all focus:ring-2 ring-primary/20"
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-2 border-t border-border/60 space-y-3">

@@ -31,6 +31,8 @@ interface TimetableSubjectInput {
   name: string;
   time: string;
   recurrenceRule?: RecurrenceRule;
+  minimumDailyMinutes?: number;
+  maximumDailyMinutes?: number;
 }
 
 interface TimetableOptionsInput {
@@ -134,6 +136,19 @@ function validateTimetableInput(subjects: TimetableSubjectInput[], options: Time
 
     if (!timePattern.test(subject.time)) {
       throw new Error('Each study session needs a valid start time.');
+    }
+
+    const min = subject.minimumDailyMinutes ?? 30;
+    const max = subject.maximumDailyMinutes ?? 60;
+
+    if (min < 0) {
+      throw new Error(`Minimum minutes for "${subject.name}" must be greater than or equal to 0.`);
+    }
+    if (max < 0) {
+      throw new Error(`Maximum minutes for "${subject.name}" must be greater than or equal to 0.`);
+    }
+    if (min > max) {
+      throw new Error(`Minimum minutes (${min}) cannot exceed maximum minutes (${max}) for "${subject.name}".`);
     }
   }
 }
@@ -325,9 +340,15 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
           subjectId: subject.name.trim(),
           startTime: subject.time,
           recurrenceRule: subject.recurrenceRule,
+          minimumDailyMinutes: subject.minimumDailyMinutes,
+          maximumDailyMinutes: subject.maximumDailyMinutes,
         })),
         { sleepTime: settings.sleepTime, deepWorkMinDuration: options.deepWorkMinDuration }
       );
+
+      // Validate schedule generation against configured minimum daily targets
+      const tz = settings.timezone || (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC');
+      generateTodaySchedule(originalSessions, options, todayKey(), tz);
 
       const updatedTimetable: TimetableData = {
         ...target,
@@ -383,9 +404,15 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
           subjectId: subject.name.trim(),
           startTime: subject.time,
           recurrenceRule: subject.recurrenceRule,
+          minimumDailyMinutes: subject.minimumDailyMinutes,
+          maximumDailyMinutes: subject.maximumDailyMinutes,
         })),
         { sleepTime: settings.sleepTime, deepWorkMinDuration: options.deepWorkMinDuration }
       );
+
+      // Validate schedule generation against configured minimum daily targets
+      const tz = settings.timezone || (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC');
+      generateTodaySchedule(originalSessions, options, todayKey(), tz);
 
       const newTimetable: TimetableData = {
         id: crypto.randomUUID(),
