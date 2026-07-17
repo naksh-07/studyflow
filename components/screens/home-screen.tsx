@@ -10,7 +10,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/feedback/stat
 import { Card } from "@/components/ui/card";
 import { useEngineStore } from "@/store/engine-store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { Cloud, LogOut, RefreshCw, Download, Plus } from "lucide-react";
+import { Cloud, LogOut, RefreshCw, Download, Plus, CloudOff, AlertCircle } from "lucide-react";
 import { usePWAInstall } from "@/hooks/use-pwa-install";
 
 export function HomeScreen() {
@@ -29,6 +29,8 @@ export function HomeScreen() {
     errorMessage,
     user,
     authLoading,
+    syncState,
+    syncLastError,
     signIn,
     signOut,
     syncCloud,
@@ -51,6 +53,90 @@ export function HomeScreen() {
     document.documentElement.classList.remove("light", "dark", "natural");
     document.documentElement.classList.add(theme);
     await setTheme(theme);
+  };
+
+  const renderSyncStatus = () => {
+    const iconClass = "h-4 w-4 shrink-0";
+    switch (syncState) {
+      case 'SYNCED':
+        return (
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <Cloud className={`${iconClass}`} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Synced</span>
+          </div>
+        );
+      case 'SYNCING_UPLOAD':
+        return (
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <RefreshCw className={`${iconClass} animate-spin`} />
+            <span className="text-xs font-semibold uppercase tracking-wider animate-pulse">Uploading...</span>
+          </div>
+        );
+      case 'SYNCING_DOWNLOAD':
+        return (
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <RefreshCw className={`${iconClass} animate-spin`} />
+            <span className="text-xs font-semibold uppercase tracking-wider animate-pulse">Downloading...</span>
+          </div>
+        );
+      case 'MERGING':
+        return (
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <RefreshCw className={`${iconClass} animate-spin`} />
+            <span className="text-xs font-semibold uppercase tracking-wider animate-pulse">Merging...</span>
+          </div>
+        );
+      case 'PENDING':
+        if (!isOnline) {
+          return (
+            <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+              <CloudOff className={`${iconClass}`} />
+              <span className="text-xs font-semibold uppercase tracking-wider">Waiting for connection</span>
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <Cloud className={`${iconClass} animate-pulse`} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Sync pending...</span>
+          </div>
+        );
+      case 'OFFLINE':
+        return (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <CloudOff className={`${iconClass}`} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Offline</span>
+          </div>
+        );
+      case 'FAILED':
+        return (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertCircle className={`${iconClass}`} />
+              <span className="text-xs font-semibold uppercase tracking-wider">Sync Failed</span>
+            </div>
+            {syncLastError && (
+              <span className="text-[10px] text-destructive/85 font-semibold mt-0.5 max-w-[200px] break-words leading-tight">
+                {syncLastError}
+              </span>
+            )}
+          </div>
+        );
+      case 'AUTH_REQUIRED':
+        return (
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertCircle className={`${iconClass}`} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Authentication Required</span>
+          </div>
+        );
+      default:
+        return (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Cloud className={`${iconClass}`} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Unknown Status</span>
+          </div>
+        );
+    }
   };
 
   const renderProgress = () => (
@@ -238,11 +324,8 @@ export function HomeScreen() {
             <div className="px-6 py-4 bg-secondary/30 rounded-2xl mb-4 border border-border mx-2">
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Cloud className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cloud Synced</p>
-                  </div>
-                  <p className="text-sm font-medium truncate max-w-[200px]" title={user.email}>
+                  {renderSyncStatus()}
+                  <p className="text-sm font-medium truncate max-w-[200px] mt-1" title={user.email}>
                     {user.email}
                   </p>
                 </div>

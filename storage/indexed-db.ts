@@ -79,7 +79,8 @@ export async function writeSnapshot(snapshot: StudyFlowSnapshot): Promise<void> 
 
 export async function readSyncQueue(): Promise<SyncOperation[]> {
   const operations = await withStore<SyncOperation[]>(SYNC_QUEUE_STORE, 'readonly', (store) => store.getAll());
-  return operations ?? [];
+  const list = operations ?? [];
+  return list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
 export async function writeSyncOperation(operation: SyncOperation): Promise<void> {

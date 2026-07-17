@@ -114,6 +114,7 @@ export class D1StudyFlowRepository {
       });
 
     const timezone = activeTimetable.settings?.timezone || 'UTC';
+    const updatedAtDate = activeTimetable.updatedAt ? new Date(activeTimetable.updatedAt) : new Date();
 
     await this.db
       .insert(timetables)
@@ -123,6 +124,7 @@ export class D1StudyFlowRepository {
         name: activeTimetable.name || 'Daily Timetable',
         isActive: true,
         timezone,
+        updatedAt: updatedAtDate,
       })
       .onConflictDoUpdate({
         target: timetables.id,
@@ -130,6 +132,7 @@ export class D1StudyFlowRepository {
           name: activeTimetable.name || 'Daily Timetable',
           isActive: true,
           timezone,
+          updatedAt: updatedAtDate,
         },
       });
 

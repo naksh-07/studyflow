@@ -18,9 +18,11 @@ import {
 import { LocalStudyFlowRepository } from '@/repositories/local-studyflow.repository';
 import { syncQueue } from '@/sync/sync-queue';
 import { DEFAULT_SETTINGS, StudyFlowSettings, StudyFlowSnapshot, TimetableData } from '@/storage/types';
-import { getAuthUrl, getCurrentUser, logout } from '@/api/client';
+import { getAuthUrl, getCurrentUser, logout, ApiError } from '@/api/client';
 import { connectivityService } from '@/services/connectivity.service';
 import { syncEngine } from '@/sync/sync-engine';
+import { runExclusive } from '@/sync/sync-lock';
+import { syncStatusTracker, SyncState } from '@/sync/sync-status';
 
 export type { AppScreenState } from '@/lib/engine';
 
@@ -49,6 +51,8 @@ interface EngineStoreState extends EngineViewState {
   remainingTime: string;
   user: { id: string; email: string; name?: string } | null;
   authLoading: boolean;
+  syncState: SyncState;
+  syncLastError: string | null;
   initialize: () => Promise<void>;
   refreshView: () => Promise<void>;
   setAppState: (state: AppScreenState) => void;
@@ -161,6 +165,8 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
 
   user: null,
   authLoading: false,
+  syncState: 'SYNCED',
+  syncLastError: null,
 
   setSetupTimetableId: (id) => set({ setupTimetableId: id }),
 
@@ -168,6 +174,11 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
     if (get().initialized) {
       return;
     }
+
+    // Subscribe to syncStatusTracker to update local store reactively on state updates
+    syncStatusTracker.subscribe((payload) => {
+      set({ syncState: payload.state, syncLastError: payload.lastError || null });
+    });
 
     set({ appState: 'loading', errorMessage: null });
 
@@ -218,6 +229,8 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
 
       if (user) {
         void get().syncCloud();
+      } else {
+        syncStatusTracker.setState('AUTH_REQUIRED');
       }
 
       connectivityService.onOnline(() => {
@@ -234,6 +247,19 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
             void get().syncCloud();
           }
         }, 60000);
+
+        const handleFocus = () => {
+          if (get().user && connectivityService.isOnline()) {
+            void get().syncCloud();
+          }
+        };
+
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            handleFocus();
+          }
+        });
       }
 
       void syncQueue.flush();
@@ -264,7 +290,7 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
     }
 
     set({
-      ...createViewUpdate(items, originalSessions, currentTime()),
+      ...createViewUpdate(items, originalSessions, currentTime(), get().appState === 'setup' ? 'setup' : undefined),
       settings,
       options: toOptions(settings),
     });
@@ -275,7 +301,7 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
   },
 
   saveTimetable: async (subjects, inputOptions) => {
-    set({ appState: 'loading', errorMessage: null });
+    set({ errorMessage: null });
 
     try {
       validateTimetableInput(subjects, inputOptions);
@@ -331,7 +357,6 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
       return true;
     } catch (error) {
       set({
-        appState: 'error',
         errorMessage: error instanceof Error ? error.message : 'Unable to save timetable.',
       });
 
@@ -340,7 +365,7 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
   },
 
   createTimetable: async (name, subjects, inputOptions) => {
-    set({ appState: 'loading', errorMessage: null });
+    set({ errorMessage: null });
 
     try {
       validateTimetableInput(subjects, inputOptions);
@@ -392,7 +417,6 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
       return newTimetable.id;
     } catch (error) {
       set({
-        appState: 'error',
         errorMessage: error instanceof Error ? error.message : 'Unable to create timetable.',
       });
       return '';
@@ -513,7 +537,7 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
     if (originalSessions.length === 0) {
       set({
         items: [],
-        ...createViewUpdate([], originalSessions),
+        ...createViewUpdate([], originalSessions, currentTime(), get().appState === 'setup' ? 'setup' : undefined),
       });
       return;
     }
@@ -543,7 +567,7 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
 
       set({
         items,
-        ...createViewUpdate(items, originalSessions, currentTime()),
+        ...createViewUpdate(items, originalSessions, currentTime(), get().appState === 'setup' ? 'setup' : undefined),
       });
     } catch (error) {
       set({
@@ -761,6 +785,7 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
       set({ authLoading: true });
       await logout();
       set({ user: null });
+      syncStatusTracker.setState('AUTH_REQUIRED');
     } catch (err) {
       console.error('Failed to sign out:', err);
     } finally {
@@ -770,48 +795,62 @@ export const useEngineStore = create<EngineStoreState>((set, get) => ({
 
   syncCloud: async () => {
     const { activeTimetableId, timetables, user } = get();
-    if (!user) return;
+    if (!user) {
+      syncStatusTracker.setState('AUTH_REQUIRED');
+      return;
+    }
+
+    if (!connectivityService.isOnline()) {
+      const remaining = await syncQueue.flush(); // will set correct PENDING / OFFLINE state
+      return;
+    }
 
     try {
       set({ authLoading: true });
-      const cloudSnapshot = await syncEngine.downloadCloudData();
+      syncStatusTracker.setState('SYNCING_DOWNLOAD');
 
-      if (cloudSnapshot) {
-        const localSnapshot: StudyFlowSnapshot = {
-          id: 'default',
-          activeTimetableId,
-          timetables,
-          updatedAt: new Date().toISOString(),
-        };
+      await runExclusive('studyflow_sync_lock', async () => {
+        const cloudSnapshot = await syncEngine.downloadCloudData();
 
-        const merged = await syncEngine.mergeData(localSnapshot, cloudSnapshot);
+        syncStatusTracker.setState('MERGING');
 
-        await repository.saveSnapshot(merged);
+        if (cloudSnapshot) {
+          const localSnapshot = await repository.getSnapshot();
+          localSnapshot.activeTimetableId = activeTimetableId;
+          localSnapshot.timetables = timetables;
 
-        const target = merged.timetables.find(t => t.id === merged.activeTimetableId) || merged.timetables[0];
+          const merged = await syncEngine.mergeData(localSnapshot, cloudSnapshot);
 
-        set({
-          activeTimetableId: merged.activeTimetableId,
-          timetables: merged.timetables,
-          settings: target.settings,
-          options: toOptions(target.settings),
-          originalSessions: target.originalSessions,
-          items: target.todayItems,
-          ...createViewUpdate(target.todayItems, target.originalSessions, currentTime()),
-        });
+          await repository.saveSnapshot(merged);
 
-        await syncQueue.enqueueSnapshot(merged);
-      } else {
-        const localSnapshot: StudyFlowSnapshot = {
-          id: 'default',
-          activeTimetableId,
-          timetables,
-          updatedAt: new Date().toISOString(),
-        };
-        await syncQueue.enqueueSnapshot(localSnapshot);
-      }
+          const target = merged.timetables.find(t => t.id === merged.activeTimetableId) || merged.timetables[0];
+
+          set({
+            activeTimetableId: merged.activeTimetableId,
+            timetables: merged.timetables,
+            settings: target.settings,
+            options: toOptions(target.settings),
+            originalSessions: target.originalSessions,
+            items: target.todayItems,
+            ...createViewUpdate(target.todayItems, target.originalSessions, currentTime(), get().appState === 'setup' ? 'setup' : undefined),
+          });
+
+          await syncQueue.enqueueSnapshot(merged);
+        } else {
+          const localSnapshot = await repository.getSnapshot();
+          localSnapshot.activeTimetableId = activeTimetableId;
+          localSnapshot.timetables = timetables;
+          await syncQueue.enqueueSnapshot(localSnapshot);
+        }
+      });
     } catch (err) {
       console.error('Sync cloud failed:', err);
+      const isAuthError = err instanceof ApiError && (err.status === 401 || err.status === 403);
+      if (isAuthError) {
+        syncStatusTracker.setState('AUTH_REQUIRED', err instanceof Error ? err.message : 'Session expired');
+      } else {
+        syncStatusTracker.setState('FAILED', err instanceof Error ? err.message : 'Cloud download failed');
+      }
     } finally {
       set({ authLoading: false });
     }

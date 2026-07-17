@@ -33,6 +33,7 @@ export interface SyncOperation {
   createdAt: string;
   attempts: number;
   lastError?: string;
+  nextAttemptAt?: string;
 }
 
 export const DEFAULT_SETTINGS: StudyFlowSettings = {

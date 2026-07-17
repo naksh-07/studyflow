@@ -10,6 +10,15 @@ const getApiBaseUrl = (): string => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
 async function request(path: string, init: RequestInit = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -21,14 +30,25 @@ async function request(path: string, init: RequestInit = {}) {
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(message || `Request failed with status ${response.status}.`);
+    throw new ApiError(message || `Request failed with status ${response.status}.`, response.status);
   }
 
   if (response.status === 204) {
     return null;
   }
 
-  return response.json();
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    throw new ApiError(`Expected JSON response, but received content-type "${contentType || 'unknown'}" with body starting with: ${text.substring(0, 150)}`, response.status);
+  }
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (parseErr) {
+    throw new ApiError(`Failed to parse JSON response. Error: ${parseErr instanceof Error ? parseErr.message : 'Unknown'}. Body was: ${text.substring(0, 150)}`, response.status);
+  }
 }
 
 export async function syncSnapshot(snapshot: StudyFlowSnapshot): Promise<void> {
@@ -53,4 +73,3 @@ export async function logout(): Promise<{ success: boolean }> {
 export async function fetchCloudSnapshot(): Promise<{ snapshot: StudyFlowSnapshot | null }> {
   return request('/sync', { method: 'GET' });
 }
-

@@ -10,6 +10,16 @@ export interface SyncEngine {
   syncPendingChanges(): Promise<void>;
 }
 
+function isDefaultSnapshot(snapshot: StudyFlowSnapshot): boolean {
+  if (!snapshot || !snapshot.timetables || snapshot.timetables.length !== 1) return false;
+  const t = snapshot.timetables[0];
+  return (
+    (!t.originalSessions || t.originalSessions.length === 0) &&
+    (!t.todayItems || t.todayItems.length === 0) &&
+    (t.name === 'Daily Timetable' || !t.name)
+  );
+}
+
 export class StudyFlowSyncEngine implements SyncEngine {
   private localRepo = new LocalStudyFlowRepository();
 
@@ -24,50 +34,26 @@ export class StudyFlowSyncEngine implements SyncEngine {
   }
 
   async mergeData(local: StudyFlowSnapshot, cloud: StudyFlowSnapshot): Promise<StudyFlowSnapshot> {
-    const isCloudNewer = new Date(cloud.updatedAt || 0).getTime() > new Date(local.updatedAt || 0).getTime();
+    const localDefault = isDefaultSnapshot(local);
+    const cloudDefault = isDefaultSnapshot(cloud);
+
+    if (localDefault && !cloudDefault) {
+      return cloud;
+    }
+    if (!localDefault && cloudDefault) {
+      return local;
+    }
+
+    const localTime = new Date(local.updatedAt || 0).getTime();
+    const cloudTime = new Date(cloud.updatedAt || 0).getTime();
+    const isCloudNewer = cloudTime > localTime;
+
     const activeTimetableId = isCloudNewer ? cloud.activeTimetableId : local.activeTimetableId;
 
     const localTimetables = local.timetables || [];
     const cloudTimetables = cloud.timetables || [];
 
     const mergedTimetables: TimetableData[] = [];
-
-    const mergeTimetable = (l: TimetableData, c: TimetableData): TimetableData => {
-      const isCNewer = new Date(c.updatedAt || 0).getTime() > new Date(l.updatedAt || 0).getTime();
-      const settings = isCNewer ? c.settings : l.settings;
-      const todayDate = isCNewer ? c.todayDate : l.todayDate;
-
-      const combinedSessions = [...l.originalSessions];
-      for (const cs of c.originalSessions) {
-        const isDuplicate = combinedSessions.some(
-          ls => ls.startTime === cs.startTime && ls.endTime === cs.endTime && ls.subjectId === cs.subjectId
-        );
-        if (!isDuplicate) {
-          combinedSessions.push(cs);
-        }
-      }
-
-      const combinedItems = [...l.todayItems];
-      for (const ci of c.todayItems) {
-        const isDuplicate = combinedItems.some(
-          li => li.startTime === ci.startTime && li.endTime === ci.endTime && 
-                (('status' in li && 'status' in ci && li.subjectId === ci.subjectId) || ('isBreak' in li && 'isBreak' in ci))
-        );
-        if (!isDuplicate) {
-          combinedItems.push(ci);
-        }
-      }
-
-      return {
-        id: l.id,
-        name: isCNewer ? c.name : l.name,
-        settings,
-        originalSessions: combinedSessions,
-        todayItems: combinedItems,
-        todayDate,
-        updatedAt: isCNewer ? c.updatedAt : l.updatedAt,
-      };
-    };
 
     const allIds = Array.from(new Set([
       ...localTimetables.map(t => t.id),
@@ -79,19 +65,40 @@ export class StudyFlowSyncEngine implements SyncEngine {
       const c = cloudTimetables.find(t => t.id === id);
 
       if (l && c) {
-        mergedTimetables.push(mergeTimetable(l, c));
+        // Exists in both: choose the one with the newer updatedAt timestamp
+        const lTime = new Date(l.updatedAt || 0).getTime();
+        const cTime = new Date(c.updatedAt || 0).getTime();
+        if (cTime > lTime) {
+          mergedTimetables.push(c);
+        } else {
+          mergedTimetables.push(l);
+        }
       } else if (l) {
-        mergedTimetables.push(l);
+        // Exists only in local
+        // Keep it if local snapshot is newer than or equal to cloud (it was created locally)
+        // Drop it if cloud snapshot is newer (it was deleted in the cloud)
+        if (localTime >= cloudTime) {
+          mergedTimetables.push(l);
+        }
       } else if (c) {
-        mergedTimetables.push(c);
+        // Exists only in cloud
+        // Keep it if cloud snapshot is newer (it was created in the cloud)
+        // Drop it if local snapshot is newer (it was deleted locally)
+        if (cloudTime > localTime) {
+          mergedTimetables.push(c);
+        }
       }
     }
 
+    const finalUpdatedAt = new Date(Math.max(localTime, cloudTime)).toISOString();
+
     return {
       id: 'default',
-      activeTimetableId,
+      activeTimetableId: mergedTimetables.some(t => t.id === activeTimetableId)
+        ? activeTimetableId
+        : (mergedTimetables[0]?.id || ''),
       timetables: mergedTimetables,
-      updatedAt: new Date().toISOString(),
+      updatedAt: finalUpdatedAt,
     };
   }
 
